@@ -1,1 +1,1 @@
-# R-kiskaupa-s-Datathon-
+# Rkiskaupas-Datathon
