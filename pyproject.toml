@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "rkiskaupas-datathon"
+version = "0.1.0"
+description = ""
+authors = ["ivan <imtambovtcev@gmail.com>"]
+readme = "README.md"
+packages = [{include = "rkiskaupas_datathon"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[tool.poetry.group.dev.dependencies]
+coverage = "^7.3.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
