@@ -207,7 +207,7 @@ class RoadMap(nx.Graph):
             # Update the traffic data for the nearest road
             self[u][v]['traffic'] = traffic_data
 
-    def subgraph_with_traffic(self):
+    def subgraph_with_only_traffic(self):
         """
         Return a subgraph containing only the edges that have traffic data.
 
@@ -224,6 +224,41 @@ class RoadMap(nx.Graph):
             G_traffic.add_edge(u, v, **data)
 
         return G_traffic
+
+    def subgraph_with_traffic(self):
+        """
+        Return a connected subgraph that contains all nodes associated with traffic data using Steiner Tree approximation.
+
+        Returns:
+        - A RoadMap instance (or NetworkX Graph) that's a tree connecting all nodes with traffic data.
+        """
+
+        # Identify nodes connected to edges with 'traffic' attribute
+        traffic_nodes = set()
+        for u, v, data in self.edges(data=True):
+            if 'traffic' in data:
+                traffic_nodes.add(u)
+                traffic_nodes.add(v)
+
+        # Calculate the shortest paths between all pairs of these nodes
+        complete_graph = nx.complete_graph(traffic_nodes)
+        for u, v in complete_graph.edges():
+            path_length = nx.shortest_path_length(self, source=u, target=v, weight='length')
+            complete_graph[u][v]['length'] = path_length
+
+        # Compute the Minimum Spanning Tree of this complete graph
+        mst = nx.minimum_spanning_tree(complete_graph, weight='length')
+
+        # Build the subgraph of the original graph that corresponds to this MST
+        G_sub = self.__class__()
+        for u, v in mst.edges():
+            path = nx.shortest_path(self, source=u, target=v, weight='length')
+            for i in range(len(path) - 1):
+                if not G_sub.has_edge(path[i], path[i + 1]):
+                    G_sub.add_edge(path[i], path[i + 1], **self[path[i]][path[i + 1]])
+
+        return G_sub
+
 
     def draw(self, title="Road Types in Iceland", zoom_to_extent=True, fig=None, ax=None,
              save=None, show=True, show_traffic_cameras=False):
