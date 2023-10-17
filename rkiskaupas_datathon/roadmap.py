@@ -5,7 +5,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
 import pyproj
-from shapely.geometry import LineString, MultiLineString
+from shapely.geometry import LineString, MultiLineString, Point
 from shapely.ops import transform
 
 
@@ -122,6 +122,57 @@ class RoadMap(nx.Graph):
             G_filtered.add_node(v)
 
         return G_filtered
+
+    def filter_circular_paths(self):
+        """Return a new RoadMap that contains only the roads that are part of circles (closed paths)."""
+
+        # Create a new empty RoadMap
+        G_filtered = RoadMap()
+
+        # Identify all simple cycles (closed paths) in the graph
+        for cycle in nx.simple_cycles(self):
+            # If the cycle has more than 2 nodes, it's a valid closed path
+            if len(cycle) > 2:
+                # Create pairs of nodes to represent the edges in the cycle
+                pairs = [(cycle[i], cycle[i+1]) for i in range(len(cycle)-1)]
+                pairs.append((cycle[-1], cycle[0]))  # Closing the loop
+
+                # Add these edges and their data to the new RoadMap
+                for u, v in pairs:
+                    if self.has_edge(u, v):
+                        data = self[u][v]
+                        G_filtered.add_edge(u, v, **data)
+                        G_filtered.add_node(u)
+                        G_filtered.add_node(v)
+
+        return G_filtered
+
+    def closest_road(self, location):
+        """
+        Find the closest road to the given location.
+
+        Parameters:
+        - location (tuple): A tuple representing (longitude, latitude) of the location.
+
+        Returns:
+        - (u, v, data): A tuple representing the start node, end node, and edge data of the closest road.
+        """
+
+        # Convert location to a Shapely Point
+        location_point = Point(location)
+
+        # Set an initial large value for minimum distance
+        min_distance = float('inf')
+        closest_edge = None
+
+        # Iterate over all the road geometries in the graph
+        for u, v, data in self.edges(data=True):
+            distance = location_point.distance(data['geometry'])
+            if distance < min_distance:
+                min_distance = distance
+                closest_edge = (u, v, data)
+
+        return closest_edge
 
     def draw(self, title="Road Types in Iceland", zoom_to_extent=True):
         # Function to convert geometry to Web Mercator projection
