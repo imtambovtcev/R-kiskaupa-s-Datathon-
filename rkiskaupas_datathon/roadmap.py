@@ -225,62 +225,63 @@ class RoadMap(nx.Graph):
 
         return G_traffic
 
-    def draw(self, title="Road Types in Iceland", zoom_to_extent=True):
-        # Set up the plot
-        fig, ax = plt.subplots(figsize=(10, 10))
+    def draw(self, title="Road Types in Iceland", zoom_to_extent=True, fig=None, ax=None,
+             save=None, show=True, show_traffic_cameras=False):
 
-        # Define a colormap
+        if fig is None or ax is None:
+            fig, ax = plt.subplots(figsize=(10, 10))
+
         colors = plt.cm.tab20c.colors  # Using the tab20c colormap
 
-        # Collect road types from the edges
         road_types = set(data['road_type']
                          for u, v, data in self.edges(data=True))
-
         all_lines = []
 
         for idx, road_type in enumerate(road_types):
-            # Use the translation or the original if not found
             translated_road_type = self.TRANSLATION_DICT.get(
                 road_type, road_type)
-
-            # Extract edges of this road type
             edges = [(u, v) for u, v, data in self.edges(
                 data=True) if data['road_type'] == road_type]
             lines = [self[u][v]['geometry'] for u, v in edges]
 
-            # Plot the lines directly since they're already in the correct projection
             for line in lines:
                 xs, ys = line.xy
                 ax.plot(xs, ys, color=colors[idx % 20],
                         label=translated_road_type, alpha=0.5)
                 all_lines.append(line)
 
-        # If zoom_to_extent is True, adjust the plot limits to the extent of the road data
+        if show_traffic_cameras:
+            # Extract locations of traffic cameras from edges with the attribute 'traffic'
+            camera_coords = [(u[0], u[1]) for u, v, data in self.edges(
+                data=True) if 'traffic' in data]
+            camera_xs, camera_ys = zip(*camera_coords)
+            ax.scatter(camera_xs, camera_ys, color='red',
+                       s=50, label='Traffic Cameras')
+
         if zoom_to_extent:
             all_coords = [point for line in all_lines for point in line.coords]
             xs, ys = zip(*all_coords)
             ax.set_xlim(min(xs), max(xs))
             ax.set_ylim(min(ys), max(ys))
-            print(f'{min(xs) = } {max(xs) = }{min(ys) = } {max(ys) = }')
         else:
-            # Show the entire Iceland using the predefined bounding box
             ax.set_xlim(self.ICELAND_BOUNDS["xmin"],
                         self.ICELAND_BOUNDS["xmax"])
             ax.set_ylim(self.ICELAND_BOUNDS["ymin"],
                         self.ICELAND_BOUNDS["ymax"])
 
-        # Add the specified basemap
         ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
-
-        # Remove axes
         ax.set_axis_off()
 
-        # Set legend with a specific location
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(),
                   title="Road Types", loc="upper left")
-
-        # Set title and display the plot
         ax.set_title(title)
-        plt.show()
+
+        if save:
+            plt.savefig(save)
+
+        if show:
+            plt.show()
+        else:
+            return fig, ax
