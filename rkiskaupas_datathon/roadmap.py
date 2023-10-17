@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import pyproj
 from shapely.geometry import LineString, MultiLineString, Point
-from shapely.ops import transform
+from shapely.ops import nearest_points, transform
 
 
 class RoadMap(nx.Graph):
@@ -74,7 +74,7 @@ class RoadMap(nx.Graph):
     @classmethod
     def load_from_wfs(cls, filename):
         """Load a RoadMap from a GeoJSON file."""
-        gdf = gpd.read_file(filename)
+        gdf = gpd.read_file(filename).to_crs("EPSG:3857")
         G = cls()
 
         # Function to handle both LineString and MultiLineString geometries
@@ -174,15 +174,58 @@ class RoadMap(nx.Graph):
 
         return closest_edge
 
-    def draw(self, title="Road Types in Iceland", zoom_to_extent=True):
-        # Function to convert geometry to Web Mercator projection
-        def to_web_mercator(geometry):
-            project = pyproj.Transformer.from_crs(
-                pyproj.CRS('EPSG:4326'),  # original (lat/lon)
-                pyproj.CRS('EPSG:3857'),  # destination (Web Mercator)
-                always_xy=True).transform
-            return transform(project, geometry)
+    def assign_traffic_to_roads(self, gdf_traffic):
+        """
+        Assign traffic values to the nearest roads.
 
+        Parameters:
+        - gdf_traffic: GeoDataFrame containing traffic points with traffic columns and geometry.
+        """
+
+        # Ensure the gdf_traffic is in the correct CRS
+        gdf_traffic = gdf_traffic.to_crs("EPSG:3857")
+
+        # Iterate over each traffic point
+        for idx, row in gdf_traffic.iterrows():
+            traffic_point_coords = row.geometry.coords[0]
+            traffic_data = {
+                'UMF_15MIN': row['UMF_15MIN'],
+                'UMF_I_DAG': row['UMF_I_DAG'],
+                'UMF_DAGUR1': row['UMF_DAGUR1'],
+                'UMF_DAGUR2': row['UMF_DAGUR2'],
+                'UMF_DAGUR3': row['UMF_DAGUR3'],
+                'UMF_DAGUR4': row['UMF_DAGUR4'],
+                'UMF_DAGUR5': row['UMF_DAGUR5'],
+                'UMF_DAGUR6': row['UMF_DAGUR6'],
+                'UMF_DAGUR7': row['UMF_DAGUR7'],
+                'coordinates': traffic_point_coords
+            }
+
+            # Find the nearest road to this traffic point using the closest_road method
+            u, v, _ = self.closest_road(traffic_point_coords)
+
+            # Update the traffic data for the nearest road
+            self[u][v]['traffic'] = traffic_data
+
+    def subgraph_with_traffic(self):
+        """
+        Return a subgraph containing only the edges that have traffic data.
+
+        Returns:
+        - A RoadMap instance (or NetworkX Graph) containing only the edges with traffic data.
+        """
+
+        edges_with_traffic = [(u, v, data) for u, v, data in self.edges(
+            data=True) if 'traffic' in data]
+
+        # Create an empty graph of the same type as the current graph
+        G_traffic = type(self)()
+        for u, v, data in edges_with_traffic:
+            G_traffic.add_edge(u, v, **data)
+
+        return G_traffic
+
+    def draw(self, title="Road Types in Iceland", zoom_to_extent=True):
         # Set up the plot
         fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -205,13 +248,12 @@ class RoadMap(nx.Graph):
                 data=True) if data['road_type'] == road_type]
             lines = [self[u][v]['geometry'] for u, v in edges]
 
-            # Plot them in Web Mercator projection
+            # Plot the lines directly since they're already in the correct projection
             for line in lines:
-                line_mercator = to_web_mercator(line)
-                xs, ys = line_mercator.xy
+                xs, ys = line.xy
                 ax.plot(xs, ys, color=colors[idx % 20],
                         label=translated_road_type, alpha=0.5)
-                all_lines.append(line_mercator)
+                all_lines.append(line)
 
         # If zoom_to_extent is True, adjust the plot limits to the extent of the road data
         if zoom_to_extent:
