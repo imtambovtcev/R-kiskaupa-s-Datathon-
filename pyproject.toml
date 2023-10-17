@@ -12,6 +12,10 @@ pytest = "^7.4.2"
 coverage = "^7.3.2"
 networkx = "^3.1"
 geopandas = "^0.14.0"
+shapely = "^2.0.2"
+matplotlib = "^3.8.0"
+contextily = "^1.4.0"
+pyproj = "^3.6.1"
 
 [build-system]
 requires = ["poetry-core"]
