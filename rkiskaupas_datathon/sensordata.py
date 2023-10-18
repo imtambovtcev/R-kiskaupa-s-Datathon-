@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 from scipy.spatial import cKDTree
 
+
 class WeatherSensor:
 
     def __init__(self, LAT, LONG):
@@ -26,7 +27,7 @@ class WeatherSensor:
         if response.status_code == 200:
             site_content = json.loads(response.text)
         else:
-            print(f"Failed to fetch website content. Status code: {response.status_code}")
+            print(f"Failed to fetch. Status code: {response.status_code}")
 
         valuepic = np.array([d['Slod'] for d in site_content])
         valueslat = np.array([d['Breidd'] for d in site_content])
