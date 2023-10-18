@@ -31,10 +31,10 @@ class WeatherSensor:
         valuepic = np.array([d['Slod'] for d in site_content])
         valueslat = np.array([d['Breidd'] for d in site_content])
         valueslong = np.array([d['Lengd'] for d in site_content])
-        points = np.hstack((valueslat.reshape(-1, 1), valueslong.reshape(-1, 1))
+        points = np.hstack(valueslat.reshape(-1, 1), valueslong.reshape(-1, 1))
 
         Sdata = iw.observation_for_closest(self.latitude, self.longitude)
-        target_point = np.array([Sdata[1]['lat'], Sdata[1]['lon'])
+        target_point = np.array([Sdata[1]['lat'], Sdata[1]['lon']])
 
         points = points
         target = target_point
