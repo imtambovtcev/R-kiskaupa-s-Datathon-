@@ -4,7 +4,9 @@ import contextily as ctx
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
 import pyproj
+from scipy.interpolate import griddata
 from shapely.geometry import LineString, MultiLineString, Point
 from shapely.ops import nearest_points, transform
 
@@ -243,7 +245,8 @@ class RoadMap(nx.Graph):
         # Calculate the shortest paths between all pairs of these nodes
         complete_graph = nx.complete_graph(traffic_nodes)
         for u, v in complete_graph.edges():
-            path_length = nx.shortest_path_length(self, source=u, target=v, weight='length')
+            path_length = nx.shortest_path_length(
+                self, source=u, target=v, weight='length')
             complete_graph[u][v]['length'] = path_length
 
         # Compute the Minimum Spanning Tree of this complete graph
@@ -255,21 +258,21 @@ class RoadMap(nx.Graph):
             path = nx.shortest_path(self, source=u, target=v, weight='length')
             for i in range(len(path) - 1):
                 if not G_sub.has_edge(path[i], path[i + 1]):
-                    G_sub.add_edge(path[i], path[i + 1], **self[path[i]][path[i + 1]])
+                    G_sub.add_edge(path[i], path[i + 1], **
+                                   self[path[i]][path[i + 1]])
 
         return G_sub
 
-
-    def draw(self, title="Road Types in Iceland", zoom_to_extent=True, fig=None, ax=None,
-             save=None, show=True, show_traffic_cameras=False):
+    def draw(self, weather_data=None, title=None, zoom_to_extent=True, fig=None, ax=None,
+         save=None, show=True, show_traffic_cameras=False, show_data=None):
 
         if fig is None or ax is None:
-            fig, ax = plt.subplots(figsize=(10, 10))
+            fig, ax = plt.subplots(figsize=(20, 20))
 
         colors = plt.cm.tab20c.colors  # Using the tab20c colormap
 
         road_types = set(data['road_type']
-                         for u, v, data in self.edges(data=True))
+                        for u, v, data in self.edges(data=True))
         all_lines = []
 
         for idx, road_type in enumerate(road_types):
@@ -290,8 +293,8 @@ class RoadMap(nx.Graph):
             camera_coords = [(u[0], u[1]) for u, v, data in self.edges(
                 data=True) if 'traffic' in data]
             camera_xs, camera_ys = zip(*camera_coords)
-            ax.scatter(camera_xs, camera_ys, color='red',
-                       s=50, label='Traffic Cameras')
+            ax.scatter(camera_xs, camera_ys, color='grey',
+                    s=20, label='Cameras')
 
         if zoom_to_extent:
             all_coords = [point for line in all_lines for point in line.coords]
@@ -310,8 +313,46 @@ class RoadMap(nx.Graph):
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(),
-                  title="Road Types", loc="upper left")
+                title="Road Types", loc="upper left")
         ax.set_title(title)
+
+        if weather_data and show_data:
+            # Convert weather data to a GeoDataFrame
+            gdf_weather = gpd.GeoDataFrame(weather_data, geometry=gpd.points_from_xy(
+                [entry["coord"]["lon"] for entry in weather_data],
+                [entry["coord"]["lat"] for entry in weather_data]
+            ))
+
+            # Set the original CRS and transform to EPSG:3857
+            gdf_weather.crs = "EPSG:4326"
+            gdf_weather = gdf_weather.to_crs("EPSG:3857")
+
+            # Extract transformed coordinates
+            longitudes = gdf_weather.geometry.x
+            latitudes = gdf_weather.geometry.y
+            grid_x, grid_y = np.mgrid[self.ICELAND_BOUNDS["xmin"]:self.ICELAND_BOUNDS["xmax"]:complex(0, 100),
+                                    self.ICELAND_BOUNDS["ymin"]:self.ICELAND_BOUNDS["ymax"]:complex(0, 100)]
+
+            if show_data == 'temperature':
+                temperatures = gdf_weather["main"].apply(lambda x: x["temp"])
+                grid_temperatures = griddata(
+                    (longitudes, latitudes), temperatures, (grid_x, grid_y), method='cubic')
+                ax.contourf(grid_x, grid_y, grid_temperatures, cmap=plt.cm.RdBu_r, alpha=0.3)
+
+            elif show_data == 'wind':
+                wind_speeds = gdf_weather["wind"].apply(lambda x: x["speed"])
+                grid_wind_speeds = griddata(
+                    (longitudes, latitudes), wind_speeds, (grid_x, grid_y), method='cubic')
+                ax.contourf(grid_x, grid_y, grid_wind_speeds, cmap=plt.cm.Blues, alpha=0.3)
+
+            elif show_data == 'visibility':
+                visibilities = gdf_weather["visibility"]
+                grid_visibilities = griddata(
+                    (longitudes, latitudes), visibilities, (grid_x, grid_y), method='cubic')
+                # Modified the colormap for visibility
+                cmap = plt.cm.Blues_r
+                norm = plt.Normalize(vmin=min(visibilities), vmax=10000)
+                ax.contourf(grid_x, grid_y, grid_visibilities, cmap=cmap, norm=norm, alpha=0.3)
 
         if save:
             plt.savefig(save)
@@ -320,3 +361,4 @@ class RoadMap(nx.Graph):
             plt.show()
         else:
             return fig, ax
+
