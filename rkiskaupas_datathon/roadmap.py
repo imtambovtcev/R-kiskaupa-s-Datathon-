@@ -4,7 +4,9 @@ import contextily as ctx
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
 import pyproj
+from scipy.interpolate import griddata
 from shapely.geometry import LineString, MultiLineString, Point
 from shapely.ops import nearest_points, transform
 
@@ -38,10 +40,12 @@ class RoadMap(nx.Graph):
         adjacency_data_str_keys = {
             str(k): {
                 str(inner_key): {
-                    **val,
-                    'geometry': list(val['geometry'].coords) if 'geometry' in val else None
-                } for inner_key, val in v.items()
-            } for k, v in adjacency_data.items()
+                    **val, 'geometry':
+                    list(val['geometry'].coords) if 'geometry' in val else None
+                }
+                for inner_key, val in v.items()
+            }
+            for k, v in adjacency_data.items()
         }
 
         with open(filename, 'w') as file:
@@ -57,16 +61,20 @@ class RoadMap(nx.Graph):
         from shapely.geometry import LineString
         adjacency_data = {
             (float(k.replace("(", "").replace(")", "").split(',')[0].strip()),
-             float(k.replace("(", "").replace(")", "").split(',')[1].strip())
-             ): {
-                (float(inner_key.replace("(", "").replace(")", "").split(',')[0].strip()),
-                 float(inner_key.replace("(", "").replace(
-                     ")", "").split(',')[1].strip())
-                 ): {
-                    **val,
-                    'geometry': LineString(val['geometry']) if val['geometry'] else None
-                } for inner_key, val in v.items()
-            } for k, v in adjacency_data_str_keys.items()
+             float(k.replace("(", "").replace(")", "").split(',')[1].strip())):
+            {
+                (float(
+                    inner_key.replace("(", "").replace(")", "").split(',')[0].strip(
+                    )),
+                 float(
+                     inner_key.replace("(", "").replace(")", "").split(',')[1].strip(
+                     ))): {
+                    **val, 'geometry':
+                    LineString(val['geometry']) if val['geometry'] else None
+                }
+                for inner_key, val in v.items()
+            }
+            for k, v in adjacency_data_str_keys.items()
         }
 
         return cls(nx.from_dict_of_dicts(adjacency_data))
@@ -87,8 +95,10 @@ class RoadMap(nx.Graph):
                 # Translate Icelandic road type to English
                 translated_road_type = cls.TRANSLATION_DICT.get(
                     road_type, road_type)
-                G.add_edge(start_point, end_point,
-                           geometry=geometry, road_type=translated_road_type)
+                G.add_edge(start_point,
+                           end_point,
+                           geometry=geometry,
+                           road_type=translated_road_type)
             elif isinstance(geometry, MultiLineString):
                 for line in geometry.geoms:
                     add_edges_from_geometry(G, line, road_type)
@@ -104,15 +114,17 @@ class RoadMap(nx.Graph):
     @property
     def road_types(self):
         """Return a list of all road types in the graph."""
-        return [data.get('road_type', None) for _, _, data in self.edges(data=True)]
+        return [
+            data.get('road_type', None) for _, _, data in self.edges(data=True)
+        ]
 
     def filter_by_road_type(self, road_types):
         """Return a new RoadMap that contains only the specified road types."""
         if isinstance(road_types, str):
             road_types = [road_types]
 
-        filtered_edges = [(u, v, data) for u, v, data in self.edges(
-            data=True) if data['road_type'] in road_types]
+        filtered_edges = [(u, v, data) for u, v, data in self.edges(data=True)
+                          if data['road_type'] in road_types]
 
         G_filtered = RoadMap()
 
@@ -134,7 +146,8 @@ class RoadMap(nx.Graph):
             # If the cycle has more than 2 nodes, it's a valid closed path
             if len(cycle) > 2:
                 # Create pairs of nodes to represent the edges in the cycle
-                pairs = [(cycle[i], cycle[i+1]) for i in range(len(cycle)-1)]
+                pairs = [(cycle[i], cycle[i + 1])
+                         for i in range(len(cycle) - 1)]
                 pairs.append((cycle[-1], cycle[0]))  # Closing the loop
 
                 # Add these edges and their data to the new RoadMap
@@ -215,8 +228,9 @@ class RoadMap(nx.Graph):
         - A RoadMap instance (or NetworkX Graph) containing only the edges with traffic data.
         """
 
-        edges_with_traffic = [(u, v, data) for u, v, data in self.edges(
-            data=True) if 'traffic' in data]
+        edges_with_traffic = [(u, v, data)
+                              for u, v, data in self.edges(data=True)
+                              if 'traffic' in data]
 
         # Create an empty graph of the same type as the current graph
         G_traffic = type(self)()
@@ -243,7 +257,10 @@ class RoadMap(nx.Graph):
         # Calculate the shortest paths between all pairs of these nodes
         complete_graph = nx.complete_graph(traffic_nodes)
         for u, v in complete_graph.edges():
-            path_length = nx.shortest_path_length(self, source=u, target=v, weight='length')
+            path_length = nx.shortest_path_length(self,
+                                                  source=u,
+                                                  target=v,
+                                                  weight='length')
             complete_graph[u][v]['length'] = path_length
 
         # Compute the Minimum Spanning Tree of this complete graph
@@ -255,16 +272,24 @@ class RoadMap(nx.Graph):
             path = nx.shortest_path(self, source=u, target=v, weight='length')
             for i in range(len(path) - 1):
                 if not G_sub.has_edge(path[i], path[i + 1]):
-                    G_sub.add_edge(path[i], path[i + 1], **self[path[i]][path[i + 1]])
+                    G_sub.add_edge(path[i], path[i + 1],
+                                   **self[path[i]][path[i + 1]])
 
         return G_sub
 
-
-    def draw(self, title="Road Types in Iceland", zoom_to_extent=True, fig=None, ax=None,
-             save=None, show=True, show_traffic_cameras=False):
+    def draw(self,
+             weather_data=None,
+             title=None,
+             zoom_to_extent=True,
+             fig=None,
+             ax=None,
+             save=None,
+             show=True,
+             show_traffic_cameras=False,
+             show_data=None):
 
         if fig is None or ax is None:
-            fig, ax = plt.subplots(figsize=(10, 10))
+            fig, ax = plt.subplots(figsize=(20, 20))
 
         colors = plt.cm.tab20c.colors  # Using the tab20c colormap
 
@@ -275,23 +300,30 @@ class RoadMap(nx.Graph):
         for idx, road_type in enumerate(road_types):
             translated_road_type = self.TRANSLATION_DICT.get(
                 road_type, road_type)
-            edges = [(u, v) for u, v, data in self.edges(
-                data=True) if data['road_type'] == road_type]
+            edges = [(u, v) for u, v, data in self.edges(data=True)
+                     if data['road_type'] == road_type]
             lines = [self[u][v]['geometry'] for u, v in edges]
 
             for line in lines:
                 xs, ys = line.xy
-                ax.plot(xs, ys, color=colors[idx % 20],
-                        label=translated_road_type, alpha=0.5)
+                ax.plot(xs,
+                        ys,
+                        color=colors[idx % 20],
+                        label=translated_road_type,
+                        alpha=0.5)
                 all_lines.append(line)
 
         if show_traffic_cameras:
             # Extract locations of traffic cameras from edges with the attribute 'traffic'
-            camera_coords = [(u[0], u[1]) for u, v, data in self.edges(
-                data=True) if 'traffic' in data]
+            camera_coords = [(u[0], u[1])
+                             for u, v, data in self.edges(data=True)
+                             if 'traffic' in data]
             camera_xs, camera_ys = zip(*camera_coords)
-            ax.scatter(camera_xs, camera_ys, color='red',
-                       s=50, label='Traffic Cameras')
+            ax.scatter(camera_xs,
+                       camera_ys,
+                       color='grey',
+                       s=20,
+                       label='Cameras')
 
         if zoom_to_extent:
             all_coords = [point for line in all_lines for point in line.coords]
@@ -309,9 +341,68 @@ class RoadMap(nx.Graph):
 
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys(),
-                  title="Road Types", loc="upper left")
+        ax.legend(by_label.values(),
+                  by_label.keys(),
+                  title="Road Types",
+                  loc="upper left")
         ax.set_title(title)
+
+        if weather_data and show_data:
+            # Convert weather data to a GeoDataFrame
+            gdf_weather = gpd.GeoDataFrame(
+                weather_data,
+                geometry=gpd.points_from_xy(
+                    [entry["coord"]["lon"] for entry in weather_data],
+                    [entry["coord"]["lat"] for entry in weather_data]))
+
+            # Set the original CRS and transform to EPSG:3857
+            gdf_weather.crs = "EPSG:4326"
+            gdf_weather = gdf_weather.to_crs("EPSG:3857")
+
+            # Extract transformed coordinates
+            longitudes = gdf_weather.geometry.x
+            latitudes = gdf_weather.geometry.y
+            grid_x, grid_y = np.mgrid[self.ICELAND_BOUNDS["xmin"]:self.
+                                      ICELAND_BOUNDS["xmax"]:complex(0, 100),
+                                      self.ICELAND_BOUNDS["ymin"]:self.
+                                      ICELAND_BOUNDS["ymax"]:complex(0, 100)]
+
+            if show_data == 'temperature':
+                temperatures = gdf_weather["main"].apply(lambda x: x["temp"])
+                grid_temperatures = griddata((longitudes, latitudes),
+                                             temperatures, (grid_x, grid_y),
+                                             method='cubic')
+                ax.contourf(grid_x,
+                            grid_y,
+                            grid_temperatures,
+                            cmap=plt.cm.RdBu_r,
+                            alpha=0.3)
+
+            elif show_data == 'wind':
+                wind_speeds = gdf_weather["wind"].apply(lambda x: x["speed"])
+                grid_wind_speeds = griddata((longitudes, latitudes),
+                                            wind_speeds, (grid_x, grid_y),
+                                            method='cubic')
+                ax.contourf(grid_x,
+                            grid_y,
+                            grid_wind_speeds,
+                            cmap=plt.cm.Blues,
+                            alpha=0.3)
+
+            elif show_data == 'visibility':
+                visibilities = gdf_weather["visibility"]
+                grid_visibilities = griddata((longitudes, latitudes),
+                                             visibilities, (grid_x, grid_y),
+                                             method='cubic')
+                # Modified the colormap for visibility
+                cmap = plt.cm.Blues_r
+                norm = plt.Normalize(vmin=min(visibilities), vmax=10000)
+                ax.contourf(grid_x,
+                            grid_y,
+                            grid_visibilities,
+                            cmap=cmap,
+                            norm=norm,
+                            alpha=0.3)
 
         if save:
             plt.savefig(save)
